@@ -1,130 +1,9 @@
 const STORAGE_KEY = "roommate_profile";
 
-const ALL_MATCHES = [
-  {
-    name: "Мария",
-    age: 24,
-    region: "Москва",
-    budget: "до 35 000 ₽",
-    interests: ["йога", "кино", "путешествия"],
-    bio: "Люблю порядок, ранние подъемы и уютные вечера дома.",
-  },
-  {
-    name: "Иван",
-    age: 27,
-    region: "Санкт-Петербург",
-    budget: "до 28 000 ₽",
-    interests: ["бег", "настолки", "кофе"],
-    bio: "Работаю в IT, ценю тишину по ночам и дружелюбную атмосферу.",
-  },
-  {
-    name: "Алина",
-    age: 22,
-    region: "Казань",
-    budget: "до 22 000 ₽",
-    interests: ["дизайн", "музыка", "фото"],
-    bio: "Творческий человек, люблю общаться и поддерживать чистоту.",
-  },
-  {
-    name: "Максим",
-    age: 29,
-    region: "Екатеринбург",
-    budget: "до 30 000 ₽",
-    interests: ["спортзал", "сериалы", "готовка"],
-    bio: "Спокойный ритм жизни, уважаю личные границы и договоренности.",
-  },
-  {
-    name: "Екатерина",
-    age: 26,
-    region: "Новосибирск",
-    budget: "до 25 000 ₽",
-    interests: ["книги", "пилатес", "английский"],
-    bio: "Ищу ответственного соседа, с которым легко договориться по быту.",
-  },
-  {
-    name: "Дмитрий",
-    age: 28,
-    region: "Москва",
-    budget: "до 40 000 ₽",
-    interests: ["сноуборд", "джаз", "код"],
-    bio: "Ценю честность, тихие выходные и порядок на кухне.",
-  },
-  {
-    name: "Ольга",
-    age: 25,
-    region: "Санкт-Петербург",
-    budget: "до 26 000 ₽",
-    interests: ["рисование", "кино", "пешие прогулки"],
-    bio: "Ищу спокойного соседа без вечеринок по будням.",
-  },
-  {
-    name: "Павел",
-    age: 31,
-    region: "Нижний Новгород",
-    budget: "до 24 000 ₽",
-    interests: ["рыбалка", "настолки", "чай"],
-    bio: "Ранний подъем, тихие вечера, уважение к личному пространству.",
-  },
-  {
-    name: "Светлана",
-    age: 23,
-    region: "Краснодар",
-    budget: "до 21 000 ₽",
-    interests: ["плавание", "подкасты", "йога"],
-    bio: "Люблю чистоту в общих зонах и договоренности по уборке.",
-  },
-  {
-    name: "Артём",
-    age: 26,
-    region: "Москва",
-    budget: "до 33 000 ₽",
-    interests: ["велосипед", "кино", "пицца"],
-    bio: "Работаю удалённо, важна тишина днём и нормальный интернет.",
-  },
-  {
-    name: "Наталья",
-    age: 30,
-    region: "Санкт-Петербург",
-    budget: "до 29 000 ₽",
-    interests: ["театр", "вино", "книги"],
-    bio: "Ищу взрослого соседа без драм и с ясными правилами по дому.",
-  },
-  {
-    name: "Кирилл",
-    age: 24,
-    region: "Казань",
-    budget: "до 23 000 ₽",
-    interests: ["скейт", "музыка", "готовка"],
-    bio: "Открыт к общению, но ночью тишина — святое.",
-  },
-  {
-    name: "Виктория",
-    age: 27,
-    region: "Ростов-на-Дону",
-    budget: "до 27 000 ₽",
-    interests: ["пилатес", "сериалы", "растения"],
-    bio: "Много времени дома, люблю уют и аккуратность в прихожей.",
-  },
-  {
-    name: "Сергей",
-    age: 33,
-    region: "Воронеж",
-    budget: "до 20 000 ₽",
-    interests: ["шахматы", "пивоварение", "футбол"],
-    bio: "Спокойный, пунктуальный, уважаю чужой график сна.",
-  },
-  {
-    name: "Полина",
-    age: 21,
-    region: "Самара",
-    budget: "до 19 000 ₽",
-    interests: ["учёба", "кофе", "походы"],
-    bio: "Студентка, ищу тихую квартиру и адекватных соседей.",
-  },
-];
-
 const BATCH_SIZE = 5;
 let matchBatchStart = 0;
+/** @type {Array<Record<string, unknown>>} */
+let lastRankedMatches = [];
 
 const entryPanel = document.getElementById("entry-panel");
 const resultsSection = document.getElementById("results-section");
@@ -135,7 +14,7 @@ const modalClose = document.getElementById("modal-close");
 const modalTitle = document.getElementById("modal-title");
 const modalBody = document.getElementById("modal-body");
 
-function createField({ id, name, type, placeholder, required = true, min, max }) {
+function createField({ id, name, type, placeholder = "", required = true, min, max, step }) {
   const input = document.createElement("input");
   input.id = id;
   input.name = name;
@@ -148,6 +27,9 @@ function createField({ id, name, type, placeholder, required = true, min, max })
   }
   if (typeof max !== "undefined") {
     input.max = String(max);
+  }
+  if (typeof step !== "undefined") {
+    input.step = String(step);
   }
   return input;
 }
@@ -180,16 +62,100 @@ function saveProfile(profile) {
 
 function clearResults() {
   cardsGrid.innerHTML = "";
+  lastRankedMatches = [];
+  matchBatchStart = 0;
   resultsSection.classList.add("hidden");
   resultsSection.classList.remove("results-visible");
   entryPanel.classList.remove("entry-panel--faded");
 }
 
+function formatInterests(match) {
+  const list = match.interests;
+  if (!Array.isArray(list)) {
+    return String(list ?? "");
+  }
+  return list.join(", ");
+}
+
+const BUDGET_MIN = 1;
+const BUDGET_MAX = 9_999_999;
+
+function formatBudgetDisplay(value) {
+  const n = typeof value === "number" ? value : Number(String(value).replace(/\s/g, ""));
+  if (!Number.isFinite(n) || !Number.isInteger(n)) {
+    return String(value ?? "");
+  }
+  return `${new Intl.NumberFormat("ru-RU").format(n)}\u00A0₽`;
+}
+
+function coerceBudgetToNumber(raw) {
+  if (typeof raw === "number" && Number.isInteger(raw) && raw >= BUDGET_MIN) {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const digits = raw.replace(/\D/g, "");
+    if (digits) {
+      const v = parseInt(digits, 10);
+      if (v >= BUDGET_MIN && v <= BUDGET_MAX) {
+        return v;
+      }
+    }
+  }
+  return null;
+}
+
+async function fetchMatchesFromServer() {
+  const saved = getSavedProfile();
+  if (!saved) {
+    throw new Error("Нет сохранённого профиля.");
+  }
+
+  const hasId = Boolean(saved.profileId);
+  const url = hasId ? "/api/matches" : "/api/search";
+  const body = hasId
+    ? { profile_id: saved.profileId }
+    : {
+        name: saved.name,
+        age: saved.age,
+        region: saved.region,
+        budget: saved.budget,
+        bio: saved.bio,
+        neighbor_requirements: saved.neighbor_requirements,
+      };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || res.statusText || "Ошибка сервера");
+  }
+
+  if (!hasId && data.profile?.id) {
+    saveProfile({
+      ...saved,
+      profileId: data.profile.id,
+    });
+  }
+
+  const matches = data.matches;
+  if (!Array.isArray(matches)) {
+    throw new Error("Некорректный ответ сервера");
+  }
+  return matches;
+}
+
 const MODAL_TRANSITION_MS = 360;
 
 function openModal(match) {
+  const pct =
+    typeof match.compatibility_percent === "number"
+      ? match.compatibility_percent
+      : Number(match.compatibility_percent ?? 0);
   modalTitle.textContent = `${match.name}, ${match.age}`;
-  modalBody.textContent = `Регион: ${match.region}. Бюджет: ${match.budget}. ${match.bio} Интересы: ${match.interests.join(", ")}.`;
+  modalBody.textContent = `Совместимость: ${pct}%. Регион: ${match.region}. Бюджет: ${formatBudgetDisplay(match.budget)}. ${match.bio} Интересы: ${formatInterests(match)}.`;
   modal.classList.remove("hidden");
   modal.classList.remove("modal--open");
   requestAnimationFrame(() => {
@@ -207,8 +173,11 @@ function closeModal() {
 }
 
 function getNextBatch({ advance, reset } = {}) {
-  const pool = ALL_MATCHES;
+  const pool = lastRankedMatches;
   const n = pool.length;
+  if (n === 0) {
+    return [];
+  }
   if (reset) {
     matchBatchStart = 0;
   } else if (advance) {
@@ -239,15 +208,22 @@ function renderMatches(options = {}) {
     region.innerHTML = `<strong>Регион:</strong> ${match.region}`;
 
     const budget = document.createElement("p");
-    budget.innerHTML = `<strong>Бюджет:</strong> ${match.budget}`;
+    budget.innerHTML = `<strong>Бюджет:</strong> ${formatBudgetDisplay(match.budget)}`;
+
+    const compat = document.createElement("p");
+    const pct =
+      typeof match.compatibility_percent === "number"
+        ? match.compatibility_percent
+        : Number(match.compatibility_percent ?? 0);
+    compat.innerHTML = `<strong>Совместимость:</strong> ${pct}%`;
 
     const interests = document.createElement("p");
-    interests.innerHTML = `<strong>Интересы:</strong> ${match.interests.join(", ")}`;
+    interests.innerHTML = `<strong>Интересы:</strong> ${formatInterests(match)}`;
 
     const bio = document.createElement("p");
     bio.textContent = match.bio;
 
-    card.append(title, region, budget, interests, bio);
+    card.append(title, region, budget, compat, interests, bio);
 
     card.addEventListener("click", () => openModal(match));
     cardsGrid.appendChild(card);
@@ -280,7 +256,18 @@ function renderQuickActions() {
   wrapper.append(searchBtn, refreshBtn);
   entryPanel.appendChild(wrapper);
 
-  searchBtn.addEventListener("click", () => renderMatches({ reset: true }));
+  searchBtn.addEventListener("click", async () => {
+    searchBtn.disabled = true;
+    try {
+      lastRankedMatches = await fetchMatchesFromServer();
+      matchBatchStart = 0;
+      renderMatches({ reset: true });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      searchBtn.disabled = false;
+    }
+  });
   refreshBtn.addEventListener("click", () => {
     clearResults();
     renderForm();
@@ -319,45 +306,58 @@ function renderForm() {
     id: "name",
     name: "name",
     type: "text",
-    placeholder: "Имя",
   });
   const ageInput = createField({
     id: "age",
     name: "age",
     type: "text",
-    placeholder: "Возраст",
   });
   ageInput.inputMode = "numeric";
-  ageInput.pattern = "\\d{2}";
   const regionInput = createField({
     id: "region",
     name: "region",
     type: "text",
-    placeholder: "Регион",
   });
   const budgetInput = createField({
     id: "budget",
     name: "budget",
-    type: "text",
-    placeholder: "Напр. до 30 000 ₽",
+    type: "number",
+    min: BUDGET_MIN,
+    max: BUDGET_MAX,
+    step: 1,
+  });
+  budgetInput.inputMode = "numeric";
+  budgetInput.autocomplete = "off";
+  budgetInput.addEventListener("keydown", (e) => {
+    if (["e", "E", "+", "-", ".", ","].includes(e.key)) {
+      e.preventDefault();
+    }
   });
   const bioInput = document.createElement("textarea");
   bioInput.id = "bio";
   bioInput.name = "bio";
   bioInput.className = "ide-input ide-textarea";
-  bioInput.placeholder = "Расскажи о себе";
   bioInput.required = true;
+
+  const neighborRequirementsInput = document.createElement("textarea");
+  neighborRequirementsInput.id = "neighbor_requirements";
+  neighborRequirementsInput.name = "neighbor_requirements";
+  neighborRequirementsInput.className = "ide-input ide-textarea";
+  neighborRequirementsInput.required = true;
 
   const saved = getSavedProfile();
   if (saved) {
     nameInput.value = String(saved.name ?? "");
     ageInput.value = saved.age != null ? String(saved.age) : "";
     regionInput.value = String(saved.region ?? "");
-    budgetInput.value = String(saved.budget ?? "");
+    const savedBudget = coerceBudgetToNumber(saved.budget);
+    budgetInput.value = savedBudget != null ? String(savedBudget) : "";
     bioInput.value = String(saved.bio ?? "");
+    neighborRequirementsInput.value = String(saved.neighbor_requirements ?? "");
   }
 
   setupAutoGrowTextarea(bioInput);
+  setupAutoGrowTextarea(neighborRequirementsInput);
 
   const stack = document.createElement("div");
   stack.className = "form-stack";
@@ -371,31 +371,55 @@ function renderForm() {
   const bioBlock = createFieldBlock({ labelText: "Общая информация о себе", inputEl: bioInput });
   bioBlock.classList.add("bio-block");
 
+  const requirementsBlock = createFieldBlock({
+    labelText: "Требования к соседу",
+    inputEl: neighborRequirementsInput,
+  });
+  requirementsBlock.classList.add("bio-block");
+
   const submitBtn = document.createElement("button");
   submitBtn.className = "submit-btn submit-btn--full";
   submitBtn.type = "submit";
   submitBtn.textContent = "Отправить";
 
-  form.append(stack, bioBlock, submitBtn);
+  form.append(stack, bioBlock, requirementsBlock, submitBtn);
   entryPanel.appendChild(form);
 
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = new FormData(form);
     const rawName = String(data.get("name") || "").trim();
     const ageRawValue = String(data.get("age") || "").trim();
     const rawAge = Number(ageRawValue);
     const rawRegion = String(data.get("region") || "").trim();
-    const rawBudget = String(data.get("budget") || "").trim();
+    const budgetField = data.get("budget");
+    const budgetStr = String(budgetField ?? "")
+      .trim()
+      .replace(/\s/g, "");
     const rawBio = String(data.get("bio") || "").trim();
+    const rawNeighborRequirements = String(data.get("neighbor_requirements") || "").trim();
 
-    if (!rawName || !rawRegion || !rawBudget || !rawBio || !/^\d{2}$/.test(ageRawValue) || Number.isNaN(rawAge)) {
+    if (
+      !rawName ||
+      !rawRegion ||
+      !budgetStr ||
+      !rawBio ||
+      !rawNeighborRequirements ||
+      !/^\d+$/.test(ageRawValue) ||
+      Number.isNaN(rawAge) ||
+      !Number.isInteger(rawAge)
+    ) {
       alert("Заполни все поля корректно.");
       return;
     }
 
-    if (rawAge < 18 || rawAge > 99) {
-      alert("Возраст должен быть от 18 до 99.");
+    if (!/^\d+$/.test(budgetStr)) {
+      alert("Бюджет введи только цифрами — сумма в рублях без текста.");
+      return;
+    }
+    const budgetNum = parseInt(budgetStr, 10);
+    if (budgetNum < BUDGET_MIN || budgetNum > BUDGET_MAX) {
+      alert(`Бюджет: целое число от ${BUDGET_MIN.toLocaleString("ru-RU")} до ${BUDGET_MAX.toLocaleString("ru-RU")} ₽.`);
       return;
     }
 
@@ -405,13 +429,42 @@ function renderForm() {
       name: extractedName || rawName,
       age: extractedAge || rawAge,
       region: rawRegion,
-      budget: rawBudget,
+      budget: budgetNum,
       bio: rawBio,
+      neighbor_requirements: rawNeighborRequirements,
     };
 
-    saveProfile(profile);
-    renderQuickActions();
-    renderMatches({ reset: true });
+    submitBtn.disabled = true;
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile.name,
+          age: profile.age,
+          region: profile.region,
+          budget: profile.budget,
+          bio: profile.bio,
+          neighbor_requirements: profile.neighbor_requirements,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.error || res.statusText || "Ошибка сервера");
+      }
+      saveProfile({
+        ...profile,
+        profileId: payload.profile.id,
+      });
+      lastRankedMatches = payload.matches || [];
+      matchBatchStart = 0;
+      renderQuickActions();
+      renderMatches({ reset: true });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      submitBtn.disabled = false;
+    }
   });
 }
 

@@ -5,10 +5,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-import re
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+
+from ai_service import rank_flatmates
+from matching import MATCH_POOL
 
 
 app = Flask(__name__)
@@ -22,95 +24,64 @@ class UserProfile:
     name: str
     age: int
     region: str
-    budget: str
+    budget: int
     bio: str
+    neighbor_requirements: str
     created_at: str
 
 
 USERS: dict[str, UserProfile] = {}
-
-# MVP mock pool. No DB, no AI service calls.
-MATCH_POOL: list[dict[str, Any]] = [
-    {
-        "id": "m-1",
-        "name": "Maria",
-        "age": 24,
-        "region": "Moscow",
-        "budget": "up to 35000",
-        "bio": "Love clean space, yoga, movies, and quiet evenings.",
-        "interests": ["yoga", "movies", "travel", "cleanliness"],
-    },
-    {
-        "id": "m-2",
-        "name": "Ivan",
-        "age": 27,
-        "region": "Saint Petersburg",
-        "budget": "up to 28000",
-        "bio": "Work in tech, into running, board games, and coffee.",
-        "interests": ["running", "board games", "coffee", "tech"],
-    },
-    {
-        "id": "m-3",
-        "name": "Alina",
-        "age": 22,
-        "region": "Kazan",
-        "budget": "up to 22000",
-        "bio": "Creative routine, design, music, and tidy shared spaces.",
-        "interests": ["design", "music", "photo", "cleanliness"],
-    },
-    {
-        "id": "m-4",
-        "name": "Maksim",
-        "age": 29,
-        "region": "Yekaterinburg",
-        "budget": "up to 30000",
-        "bio": "Gym, cooking, and clear boundaries with flatmates.",
-        "interests": ["gym", "cooking", "series", "boundaries"],
-    },
-    {
-        "id": "m-5",
-        "name": "Ekaterina",
-        "age": 26,
-        "region": "Novosibirsk",
-        "budget": "up to 25000",
-        "bio": "Books, pilates, language learning, and stable routines.",
-        "interests": ["books", "pilates", "english", "routine"],
-    },
-    {
-        "id": "m-6",
-        "name": "Artem",
-        "age": 25,
-        "region": "Moscow",
-        "budget": "up to 32000",
-        "bio": "Cycling, movies, and respectful communication.",
-        "interests": ["cycling", "movies", "travel", "communication"],
-    },
-    {
-        "id": "m-7",
-        "name": "Sofia",
-        "age": 23,
-        "region": "Kazan",
-        "budget": "up to 24000",
-        "bio": "Morning runs, healthy food, and calm evenings.",
-        "interests": ["running", "cooking", "health", "quiet"],
-    },
-]
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def normalize_text(value: str) -> list[str]:
-    return re.findall(r"[a-zA-Zа-яА-ЯёЁ0-9]+", value.lower())
+_BUDGET_MIN = 1
+_BUDGET_MAX = 9_999_999
+
+
+def parse_budget(raw: Any) -> tuple[bool, int, str]:
+    if raw is None:
+        return False, 0, "Missing field: budget"
+    if isinstance(raw, bool):
+        return False, 0, "Field 'budget' must be a positive integer"
+    if isinstance(raw, int):
+        if _BUDGET_MIN <= raw <= _BUDGET_MAX:
+            return True, raw, ""
+        return False, 0, f"Field 'budget' must be between {_BUDGET_MIN} and {_BUDGET_MAX}"
+    if isinstance(raw, float):
+        if raw.is_integer():
+            iv = int(raw)
+            if _BUDGET_MIN <= iv <= _BUDGET_MAX:
+                return True, iv, ""
+        return False, 0, "Field 'budget' must be a positive integer"
+    if isinstance(raw, str):
+        s = raw.strip().replace(" ", "")
+        if not s:
+            return False, 0, "Field 'budget' cannot be empty"
+        if not s.isdigit():
+            return False, 0, "Field 'budget' must be a positive integer"
+        v = int(s)
+        if _BUDGET_MIN <= v <= _BUDGET_MAX:
+            return True, v, ""
+        return False, 0, f"Field 'budget' must be between {_BUDGET_MIN} and {_BUDGET_MAX}"
+    return False, 0, "Field 'budget' must be a positive integer"
 
 
 def validate_profile_payload(payload: dict[str, Any]) -> tuple[bool, str]:
-    required_fields = ["name", "age", "region", "budget", "bio"]
+    required_fields = ["name", "age", "region", "budget", "bio", "neighbor_requirements"]
     for field in required_fields:
         if field not in payload:
             return False, f"Missing field: {field}"
-        if isinstance(payload[field], str) and not payload[field].strip():
+
+    ok_b, _, err_b = parse_budget(payload["budget"])
+    if not ok_b:
+        return False, err_b
+
+    for field in ("name", "region", "bio", "neighbor_requirements"):
+        val = payload[field]
+        if not isinstance(val, str) or not val.strip():
             return False, f"Field '{field}' cannot be empty"
 
     try:
@@ -118,40 +89,12 @@ def validate_profile_payload(payload: dict[str, Any]) -> tuple[bool, str]:
     except (TypeError, ValueError):
         return False, "Field 'age' must be an integer"
 
-    if age < 18 or age > 99:
-        return False, "Field 'age' must be between 18 and 99"
-
     return True, ""
 
 
-def match_score(user: UserProfile, candidate: dict[str, Any]) -> int:
-    score = 0
-
-    if user.region.strip().lower() == str(candidate.get("region", "")).strip().lower():
-        score += 3
-
-    user_tokens = set(normalize_text(user.bio))
-    candidate_tokens = set(normalize_text(candidate.get("bio", "")))
-    interests = {str(x).lower() for x in candidate.get("interests", [])}
-    token_overlap = len((user_tokens & candidate_tokens) | (user_tokens & interests))
-    score += token_overlap
-
-    age_gap = abs(user.age - int(candidate.get("age", user.age)))
-    if age_gap <= 2:
-        score += 2
-    elif age_gap <= 5:
-        score += 1
-
-    return score
-
-
-def top_matches(user: UserProfile, limit: int = 5) -> list[dict[str, Any]]:
-    scored = []
-    for candidate in MATCH_POOL:
-        scored.append((match_score(user, candidate), candidate))
-
-    scored.sort(key=lambda row: row[0], reverse=True)
-    return [{**candidate, "score": score} for score, candidate in scored[:limit]]
+def top_matches(user: UserProfile, limit: int | None = None) -> list[dict[str, Any]]:
+    cap = len(MATCH_POOL) if limit is None else min(limit, len(MATCH_POOL))
+    return rank_flatmates(asdict(user), MATCH_POOL, limit=cap)
 
 
 @app.get("/api/health")
@@ -183,13 +126,15 @@ def create_profile() -> Any:
     if not valid:
         return jsonify({"error": error}), 400
 
+    _, budget_int, _ = parse_budget(payload["budget"])
     profile = UserProfile(
         id=str(uuid4()),
         name=str(payload["name"]).strip(),
         age=int(payload["age"]),
         region=str(payload["region"]).strip(),
-        budget=str(payload["budget"]).strip(),
+        budget=budget_int,
         bio=str(payload["bio"]).strip(),
+        neighbor_requirements=str(payload["neighbor_requirements"]).strip(),
         created_at=now_iso(),
     )
     USERS[profile.id] = profile
@@ -204,7 +149,7 @@ def get_matches() -> Any:
         return jsonify({"error": "Unknown profile_id"}), 404
 
     user = USERS[profile_id]
-    return jsonify({"profile_id": user.id, "matches": top_matches(user, limit=5)})
+    return jsonify({"profile_id": user.id, "matches": top_matches(user)})
 
 
 @app.post("/api/search")
@@ -214,17 +159,19 @@ def create_profile_and_match() -> Any:
     if not valid:
         return jsonify({"error": error}), 400
 
+    _, budget_int, _ = parse_budget(payload["budget"])
     profile = UserProfile(
         id=str(uuid4()),
         name=str(payload["name"]).strip(),
         age=int(payload["age"]),
         region=str(payload["region"]).strip(),
-        budget=str(payload["budget"]).strip(),
+        budget=budget_int,
         bio=str(payload["bio"]).strip(),
+        neighbor_requirements=str(payload["neighbor_requirements"]).strip(),
         created_at=now_iso(),
     )
     USERS[profile.id] = profile
-    return jsonify({"profile": asdict(profile), "matches": top_matches(profile, limit=5)}), 201
+    return jsonify({"profile": asdict(profile), "matches": top_matches(profile)}), 201
 
 
 if __name__ == "__main__":
