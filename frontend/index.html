@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Подбор сожителей</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <h1>Начнем искать тебе соседа?</h1>
+        <p class="subtitle">Заполни короткую анкету и получи 5 подходящих вариантов.</p>
+      </section>
+
+      <section id="entry-panel" class="entry-panel"></section>
+
+      <section id="results-section" class="results hidden">
+        <h2>Твои совпадения</h2>
+        <div id="cards-grid" class="cards-grid"></div>
+        <button id="continue-btn" type="button" class="secondary-btn">Продолжить поиск</button>
+      </section>
+    </main>
+
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-card">
+        <button id="modal-close" class="modal-close" aria-label="Закрыть">x</button>
+        <h3 id="modal-title"></h3>
+        <p id="modal-body"></p>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
